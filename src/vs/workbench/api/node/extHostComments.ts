@@ -10,7 +10,7 @@ import { ExtHostDocuments } from 'vs/workbench/api/node/extHostDocuments';
 import * as extHostTypeConverter from 'vs/workbench/api/node/extHostTypeConverters';
 import * as types from 'vs/workbench/api/node/extHostTypes';
 import * as vscode from 'vscode';
-import { ExtHostCommentsShape, IMainContext, MainContext, MainThreadCommentsShape } from './extHost.protocol';
+import { ExtHostCommentsShape, IMainContext, MainContext, MainThreadCommentsShape } from '../common/extHost.protocol';
 import { CommandsConverter, ExtHostCommands } from './extHostCommands';
 import { IRange } from 'vs/editor/common/core/range';
 import { CancellationToken } from 'vs/base/common/cancellation';
@@ -145,15 +145,15 @@ export class ExtHostComments implements ExtHostCommentsShape {
 		});
 	}
 
-	$createNewCommentWidgetCallback(commentControllerHandle: number, uriComponents: UriComponents, range: IRange, token: CancellationToken): void {
+	$createNewCommentWidgetCallback(commentControllerHandle: number, uriComponents: UriComponents, range: IRange, token: CancellationToken): Promise<void> {
 		const commentController = this._commentControllers.get(commentControllerHandle);
 
 		if (!commentController || !commentController.emptyCommentThreadFactory) {
-			return;
+			return Promise.resolve();
 		}
 
 		const document = this._documents.getDocument(URI.revive(uriComponents));
-		commentController.emptyCommentThreadFactory.createEmptyCommentThread(document, extHostTypeConverter.Range.to(range));
+		return asPromise(() => commentController.emptyCommentThreadFactory!.createEmptyCommentThread(document, extHostTypeConverter.Range.to(range))).then(() => Promise.resolve());
 	}
 
 	registerWorkspaceCommentProvider(

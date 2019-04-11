@@ -4,16 +4,17 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as assert from 'assert';
-import { FileService2 } from 'vs/workbench/services/files2/browser/fileService2';
+import { FileService2 } from 'vs/workbench/services/files2/common/fileService2';
 import { URI } from 'vs/base/common/uri';
 import { IFileSystemProviderRegistrationEvent } from 'vs/platform/files/common/files';
 import { IDisposable } from 'vs/base/common/lifecycle';
 import { NullFileSystemProvider } from 'vs/workbench/test/workbenchTestServices';
+import { NullLogService } from 'vs/platform/log/common/log';
 
 suite('File Service 2', () => {
 
 	test('provider registration', async () => {
-		const service = new FileService2();
+		const service = new FileService2(new NullLogService());
 
 		assert.equal(service.canHandleResource(URI.parse('test://foo/bar')), false);
 
@@ -22,9 +23,12 @@ suite('File Service 2', () => {
 			registrations.push(e);
 		});
 
-		let registrationDisposable: IDisposable;
+		let registrationDisposable: IDisposable | undefined = undefined;
+		let callCount = 0;
 		service.onWillActivateFileSystemProvider(e => {
-			if (e.scheme === 'test') {
+			callCount++;
+
+			if (e.scheme === 'test' && callCount === 1) {
 				e.join(new Promise(resolve => {
 					registrationDisposable = service.registerProvider('test', new NullFileSystemProvider());
 
@@ -40,8 +44,12 @@ suite('File Service 2', () => {
 		assert.equal(registrations.length, 1);
 		assert.equal(registrations[0].scheme, 'test');
 		assert.equal(registrations[0].added, true);
+		assert.ok(registrationDisposable);
 
-		registrationDisposable.dispose();
+		await service.activateProvider('test');
+		assert.equal(callCount, 2); // activation is called again
+
+		registrationDisposable!.dispose();
 
 		assert.equal(service.canHandleResource(URI.parse('test://foo/bar')), false);
 

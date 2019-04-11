@@ -6,10 +6,10 @@
 import { Disposable, IDisposable, dispose } from 'vs/base/common/lifecycle';
 import { ICodeEditor, isCodeEditor, isDiffEditor, IDiffEditor } from 'vs/editor/browser/editorBrowser';
 import * as modes from 'vs/editor/common/modes';
-import { extHostNamedCustomer } from 'vs/workbench/api/electron-browser/extHostCustomers';
+import { extHostNamedCustomer } from 'vs/workbench/api/common/extHostCustomers';
 import { keys } from 'vs/base/common/map';
 import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
-import { ExtHostCommentsShape, ExtHostContext, IExtHostContext, MainContext, MainThreadCommentsShape, CommentProviderFeatures } from '../node/extHost.protocol';
+import { ExtHostCommentsShape, ExtHostContext, IExtHostContext, MainContext, MainThreadCommentsShape, CommentProviderFeatures } from '../common/extHost.protocol';
 
 import { ICommentService, ICommentInfo } from 'vs/workbench/contrib/comments/electron-browser/commentService';
 import { COMMENTS_PANEL_ID, CommentsPanel, COMMENTS_PANEL_TITLE } from 'vs/workbench/contrib/comments/electron-browser/commentsPanel';
@@ -22,8 +22,9 @@ import { ICommentsConfiguration } from 'vs/workbench/contrib/comments/electron-b
 import { ExtensionIdentifier } from 'vs/platform/extensions/common/extensions';
 import { Registry } from 'vs/platform/registry/common/platform';
 import { PanelRegistry, Extensions as PanelExtensions, PanelDescriptor } from 'vs/workbench/browser/panel';
-import { IRange } from 'vs/editor/common/core/range';
+import { IRange, Range } from 'vs/editor/common/core/range';
 import { Emitter, Event } from 'vs/base/common/event';
+import { CancellationToken } from 'vs/base/common/cancellation';
 
 export class MainThreadDocumentCommentProvider implements modes.DocumentCommentProvider {
 	private readonly _proxy: ExtHostCommentsShape;
@@ -40,39 +41,39 @@ export class MainThreadDocumentCommentProvider implements modes.DocumentCommentP
 		this._features = features;
 	}
 
-	async provideDocumentComments(uri, token) {
+	async provideDocumentComments(uri: URI, token: CancellationToken) {
 		return this._proxy.$provideDocumentComments(this._handle, uri);
 	}
 
-	async createNewCommentThread(uri, range, text, token) {
+	async createNewCommentThread(uri: URI, range: Range, text: string, token: CancellationToken) {
 		return this._proxy.$createNewCommentThread(this._handle, uri, range, text);
 	}
 
-	async replyToCommentThread(uri, range, thread, text, token) {
+	async replyToCommentThread(uri: URI, range: Range, thread: modes.CommentThread, text: string, token: CancellationToken) {
 		return this._proxy.$replyToCommentThread(this._handle, uri, range, thread, text);
 	}
 
-	async editComment(uri, comment, text, token) {
+	async editComment(uri: URI, comment: modes.Comment, text: string, token: CancellationToken) {
 		return this._proxy.$editComment(this._handle, uri, comment, text);
 	}
 
-	async deleteComment(uri, comment, token) {
+	async deleteComment(uri: URI, comment: modes.Comment, token: CancellationToken) {
 		return this._proxy.$deleteComment(this._handle, uri, comment);
 	}
 
-	async startDraft(uri, token): Promise<void> {
+	async startDraft(uri: URI, token: CancellationToken): Promise<void> {
 		return this._proxy.$startDraft(this._handle, uri);
 	}
-	async deleteDraft(uri, token): Promise<void> {
+	async deleteDraft(uri: URI, token: CancellationToken): Promise<void> {
 		return this._proxy.$deleteDraft(this._handle, uri);
 	}
-	async finishDraft(uri, token): Promise<void> {
+	async finishDraft(uri: URI, token: CancellationToken): Promise<void> {
 		return this._proxy.$finishDraft(this._handle, uri);
 	}
-	async addReaction(uri, comment: modes.Comment, reaction: modes.CommentReaction, token): Promise<void> {
+	async addReaction(uri: URI, comment: modes.Comment, reaction: modes.CommentReaction, token: CancellationToken): Promise<void> {
 		return this._proxy.$addReaction(this._handle, uri, comment, reaction);
 	}
-	async deleteReaction(uri, comment: modes.Comment, reaction: modes.CommentReaction, token): Promise<void> {
+	async deleteReaction(uri: URI, comment: modes.Comment, reaction: modes.CommentReaction, token: CancellationToken): Promise<void> {
 		return this._proxy.$deleteReaction(this._handle, uri, comment, reaction);
 	}
 
@@ -142,11 +143,11 @@ export class MainThreadCommentThread implements modes.CommentThread2 {
 		return this._additionalCommands;
 	}
 
-	set deleteCommand(newCommand: modes.Command) {
+	set deleteCommand(newCommand: modes.Command | undefined) {
 		this._deleteCommand = newCommand;
 	}
 
-	get deleteCommand(): modes.Command {
+	get deleteCommand(): modes.Command | undefined {
 		return this._deleteCommand;
 	}
 
@@ -358,7 +359,7 @@ export class MainThreadCommentController {
 	}
 
 
-	async getDocumentComments(resource: URI, token) {
+	async getDocumentComments(resource: URI, token: CancellationToken) {
 		let ret: modes.CommentThread2[] = [];
 		for (let thread of keys(this._threads)) {
 			const commentThread = this._threads.get(thread)!;
@@ -374,15 +375,15 @@ export class MainThreadCommentController {
 			threads: ret,
 			commentingRanges: commentingRanges ?
 				{
-					resource: resource, ranges: commentingRanges, newCommentThreadCallback: (uri: UriComponents, range: IRange) => {
-						this._proxy.$createNewCommentWidgetCallback(this.handle, uri, range, token);
+					resource: resource, ranges: commentingRanges, newCommentThreadCallback: async (uri: UriComponents, range: IRange) => {
+						await this._proxy.$createNewCommentWidgetCallback(this.handle, uri, range, token);
 					}
 				} : [],
 			draftMode: modes.DraftMode.NotSupported
 		};
 	}
 
-	async getCommentingRanges(resource: URI, token): Promise<IRange[]> {
+	async getCommentingRanges(resource: URI, token: CancellationToken): Promise<IRange[]> {
 		let commentingRanges = await this._proxy.$provideCommentingRanges(this.handle, resource, token);
 		return commentingRanges || [];
 	}
@@ -391,7 +392,7 @@ export class MainThreadCommentController {
 		return this._features.reactionGroup;
 	}
 
-	async toggleReaction(uri, thread: modes.CommentThread2, comment: modes.Comment, reaction: modes.CommentReaction, token): Promise<void> {
+	async toggleReaction(uri: URI, thread: modes.CommentThread2, comment: modes.Comment, reaction: modes.CommentReaction, token: CancellationToken): Promise<void> {
 		return this._proxy.$toggleReaction(this._handle, thread.commentThreadHandle, uri, comment, reaction);
 	}
 
@@ -476,6 +477,9 @@ export class MainThreadComments extends Disposable implements MainThreadComments
 
 	$unregisterCommentController(handle: number): void {
 		const providerId = this._handlers.get(handle);
+		if (typeof providerId !== 'string') {
+			throw new Error('unknown handler');
+		}
 		this._commentService.unregisterCommentController(providerId);
 		this._handlers.delete(handle);
 		this._commentControllers.delete(handle);
